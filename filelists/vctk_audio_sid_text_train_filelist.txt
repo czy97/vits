@@ -34556,7 +34556,6 @@ DUMMY2/p238/p238_049.wav|37|It comes from reflection or thinking.
 DUMMY2/p317/p317_056.wav|97|That tells you something about them.
 DUMMY2/p374/p374_033.wav|11|I will always remember the horrible images.
 DUMMY2/p265/p265_248.wav|73|However, it is understood that offers of further payments are unlikely.
-DUMMY2/p323/p323_424.wav|34|I want him to take on Gomez.
 DUMMY2/p244/p244_406.wav|78|There is a demand for it.
 DUMMY2/p259/p259_449.wav|7|None of the pieces was commissioned.)
 DUMMY2/p293/p293_259.wav|23|I find the whole affair disturbing.
