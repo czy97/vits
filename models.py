@@ -1,4 +1,6 @@
 import copy
+import os
+import numpy as np
 import math
 import torch
 from torch import nn
@@ -435,6 +437,8 @@ class SynthesizerTrn(nn.Module):
                  n_speakers=0,
                  gin_channels=0,
                  use_sdp=True,
+                 spk_emb_path='',
+                 spk_emb_affine=False,
                  **kwargs):
 
         super().__init__()
@@ -481,14 +485,28 @@ class SynthesizerTrn(nn.Module):
             self.dp = DurationPredictor(
                 hidden_channels, 256, 3, 0.5, gin_channels=gin_channels)
 
+        self.spk_emb_trans = nn.Identity()
         if n_speakers > 1:
-            self.emb_g = nn.Embedding(n_speakers, gin_channels)
+            if os.path.exists(spk_emb_path):
+                spk_embs = torch.from_numpy(np.load(spk_emb_path)).float()
+                spk_num, emb_dim = spk_embs.shape
+                self.emb_g = nn.Embedding(spk_num, emb_dim)
+                self.emb_g.weight = nn.Parameter(spk_embs, requires_grad=False)
+
+                if not spk_emb_affine:
+                    assert emb_dim == gin_channels, "The speaker embedding dimension is not equal to gin_channels"
+                else:
+                    self.spk_emb_trans = nn.Linear(emb_dim, gin_channels)
+
+            else:
+                self.emb_g = nn.Embedding(n_speakers, gin_channels)
+
 
     def forward(self, x, x_lengths, y, y_lengths, sid=None):
 
         x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths)
         if self.n_speakers > 0:
-            g = self.emb_g(sid).unsqueeze(-1)  # [b, h, 1]
+            g = self.spk_emb_trans(self.emb_g(sid)).unsqueeze(-1)  # [b, h, 1]
         else:
             g = None
 
@@ -540,7 +558,7 @@ class SynthesizerTrn(nn.Module):
     def infer(self, x, x_lengths, sid=None, noise_scale=1, length_scale=1, noise_scale_w=1., max_len=None):
         x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths)
         if self.n_speakers > 0:
-            g = self.emb_g(sid).unsqueeze(-1)  # [b, h, 1]
+            g = self.spk_emb_trans(self.emb_g(sid)).unsqueeze(-1)  # [b, h, 1]
         else:
             g = None
 
@@ -569,8 +587,8 @@ class SynthesizerTrn(nn.Module):
 
     def voice_conversion(self, y, y_lengths, sid_src, sid_tgt):
         assert self.n_speakers > 0, "n_speakers have to be larger than 0."
-        g_src = self.emb_g(sid_src).unsqueeze(-1)
-        g_tgt = self.emb_g(sid_tgt).unsqueeze(-1)
+        g_src = self.spk_emb_trans(self.emb_g(sid_src)).unsqueeze(-1)
+        g_tgt = self.spk_emb_trans(self.emb_g(sid_tgt)).unsqueeze(-1)
         z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=g_src)
         z_p = self.flow(z, y_mask, g=g_src)
         z_hat = self.flow(z_p, y_mask, g=g_tgt, reverse=True)
