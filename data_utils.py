@@ -177,6 +177,15 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         self.min_text_len = getattr(hparams, "min_text_len", 1)
         self.max_text_len = getattr(hparams, "max_text_len", 190)
 
+        self.use_utt_level_spk_emb = getattr(hparams, "use_utt_level_spk_emb", False)
+        self.wav_dir_prefix = getattr(hparams, "wav_dir_prefix", "")
+        self.emb_dir_prefix = getattr(hparams, "emb_dir_prefix", "")
+        mean_spk_emb_path = getattr(hparams, "mean_spk_emb_path", "")
+        if os.path.exists(mean_spk_emb_path):
+            self.mean_spk_emb = np.load(mean_spk_emb_path)
+        else:
+            self.mean_spk_emb = 0.0
+
         random.seed(1234)
         random.shuffle(self.audiopaths_sid_text)
         self._filter()
@@ -202,10 +211,11 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
     def get_audio_text_speaker_pair(self, audiopath_sid_text):
         # separate filename, speaker_id and text
         audiopath, sid, text = audiopath_sid_text[0], audiopath_sid_text[1], audiopath_sid_text[2]
+        spk_emb = self.get_spk_emb(audiopath)
         text = self.get_text(text)
         spec, wav = self.get_audio(audiopath)
         sid = self.get_sid(sid)
-        return (text, spec, wav, sid)
+        return (text, spec, wav, sid, spk_emb)
 
     def get_audio(self, filename):
         audio, sampling_rate = load_wav_to_torch(filename)
@@ -238,6 +248,15 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
     def get_sid(self, sid):
         sid = torch.LongTensor([int(sid)])
         return sid
+
+    def get_spk_emb(self, audio_path):
+        if self.use_utt_level_spk_emb:
+            emb_path = audio_path.replace(self.wav_dir_prefix, self.emb_dir_prefix)
+            emb_path = emb_path.split('.')[0] + '.npy'
+            emb = torch.from_numpy(np.load(emb_path) - self.mean_spk_emb).float()
+            return emb
+        else:
+            return None
 
     def __getitem__(self, index):
         return self.get_audio_text_speaker_pair(self.audiopaths_sid_text[index])
@@ -280,6 +299,8 @@ class TextAudioSpeakerCollate():
         text_padded.zero_()
         spec_padded.zero_()
         wav_padded.zero_()
+
+        spk_emb_list = []
         for i in range(len(ids_sorted_decreasing)):
             row = batch[ids_sorted_decreasing[i]]
 
@@ -297,9 +318,16 @@ class TextAudioSpeakerCollate():
 
             sid[i] = row[3]
 
+            spk_emb_list.append(row[4])
+
+        if spk_emb_list[0] is None:
+            spk_emb_array = None
+        else:
+            spk_emb_array = torch.cat(spk_emb_list, dim=0)
+
         if self.return_ids:
-            return text_padded, text_lengths, spec_padded, spec_lengths, wav_padded, wav_lengths, sid, ids_sorted_decreasing
-        return text_padded, text_lengths, spec_padded, spec_lengths, wav_padded, wav_lengths, sid
+            return text_padded, text_lengths, spec_padded, spec_lengths, wav_padded, wav_lengths, sid, spk_emb_array, ids_sorted_decreasing
+        return text_padded, text_lengths, spec_padded, spec_lengths, wav_padded, wav_lengths, sid, spk_emb_array
 
 
 class DistributedBucketSampler(torch.utils.data.distributed.DistributedSampler):

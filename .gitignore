@@ -12,5 +12,6 @@ monotonic_align/monotonic_align
 
 .vscode/*
 wavs/*
+spk_embs/*
 slurm_logs/*
 tmp/*

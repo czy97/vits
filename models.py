@@ -438,6 +438,7 @@ class SynthesizerTrn(nn.Module):
                  gin_channels=0,
                  use_sdp=True,
                  spk_emb_path='',
+                 mean_spk_emb_path='',
                  spk_emb_affine=False,
                  **kwargs):
 
@@ -489,6 +490,8 @@ class SynthesizerTrn(nn.Module):
         if n_speakers > 1:
             if os.path.exists(spk_emb_path):
                 spk_embs = torch.from_numpy(np.load(spk_emb_path)).float()
+                if os.path.exists(mean_spk_emb_path):
+                    spk_embs = spk_embs - torch.from_numpy(np.load(mean_spk_emb_path)).float()
                 spk_num, emb_dim = spk_embs.shape
                 self.emb_g = nn.Embedding(spk_num, emb_dim)
                 self.emb_g.weight = nn.Parameter(spk_embs, requires_grad=False)
@@ -502,11 +505,14 @@ class SynthesizerTrn(nn.Module):
                 self.emb_g = nn.Embedding(n_speakers, gin_channels)
 
 
-    def forward(self, x, x_lengths, y, y_lengths, sid=None):
+    def forward(self, x, x_lengths, y, y_lengths, sid=None, spk_emb=None):
 
         x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths)
         if self.n_speakers > 0:
-            g = self.spk_emb_trans(self.emb_g(sid)).unsqueeze(-1)  # [b, h, 1]
+            if spk_emb is None:
+                g = self.spk_emb_trans(self.emb_g(sid)).unsqueeze(-1)  # [b, h, 1]
+            else:
+                g = self.spk_emb_trans(spk_emb).unsqueeze(-1)  # [b, h, 1]
         else:
             g = None
 
@@ -555,10 +561,13 @@ class SynthesizerTrn(nn.Module):
         o = self.dec(z_slice, g=g)
         return o, l_length, attn, ids_slice, x_mask, y_mask, (z, z_p, m_p, logs_p, m_q, logs_q)
 
-    def infer(self, x, x_lengths, sid=None, noise_scale=1, length_scale=1, noise_scale_w=1., max_len=None):
+    def infer(self, x, x_lengths, sid=None, noise_scale=1, length_scale=1, noise_scale_w=1., max_len=None, spk_emb=None):
         x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths)
         if self.n_speakers > 0:
-            g = self.spk_emb_trans(self.emb_g(sid)).unsqueeze(-1)  # [b, h, 1]
+            if spk_emb is None:
+                g = self.spk_emb_trans(self.emb_g(sid)).unsqueeze(-1)  # [b, h, 1]
+            else:
+                g = self.spk_emb_trans(spk_emb).unsqueeze(-1)  # [b, h, 1]
         else:
             g = None
 
