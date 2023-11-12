@@ -8,7 +8,7 @@ import torch.utils.data
 import commons
 from mel_processing import spectrogram_torch
 from utils import load_wav_to_torch, load_filepaths_and_text
-from text import text_to_sequence, cleaned_text_to_sequence
+from text import text_to_sequence, cleaned_text_to_sequence, Tokenizer
 
 
 class TextAudioLoader(torch.utils.data.Dataset):
@@ -186,6 +186,13 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         else:
             self.mean_spk_emb = 0.0
 
+        # get tokens for self defined dataset
+        token_path = getattr(hparams, "token_path", "")
+        if os.path.exists(token_path):
+            self.tokenizer = Tokenizer(token_path)
+        else:
+            self.tokenizer = None
+
         random.seed(1234)
         random.shuffle(self.audiopaths_sid_text)
         self._filter()
@@ -236,10 +243,13 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
         return spec, audio_norm
 
     def get_text(self, text):
-        if self.cleaned_text:
-            text_norm = cleaned_text_to_sequence(text)
+        if self.tokenizer is None:
+            if self.cleaned_text:
+                text_norm = cleaned_text_to_sequence(text)
+            else:
+                text_norm = text_to_sequence(text, self.text_cleaners)
         else:
-            text_norm = text_to_sequence(text, self.text_cleaners)
+            text_norm = self.tokenizer.tokenize(text, split_char=' ')
         if self.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
         text_norm = torch.LongTensor(text_norm)
